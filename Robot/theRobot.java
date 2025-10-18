@@ -273,6 +273,150 @@ public class theRobot extends JFrame {
     // store your computed value of being in each state (x, y)
     double[][] Vs;
     
+    // Helper function to normalize a probability array
+    private void normalizeProbabilities(double[][] probArray) {
+        double totalProb = 0.0;
+        for (int y = 0; y < mundo.height; y++) {
+            for (int x = 0; x < mundo.width; x++) {
+                totalProb += probArray[x][y];
+            }
+        }
+        
+        // Normalize if total > 0
+        if (totalProb > 0) {
+            for (int y = 0; y < mundo.height; y++) {
+                for (int x = 0; x < mundo.width; x++) {
+                    probArray[x][y] /= totalProb;
+                }
+            }
+        }
+    }
+
+    // Helper function to check if coordinates are valid and navigable
+    private boolean isValidPosition(int x, int y) {
+        return x >= 0 && x < mundo.width && y >= 0 && y < mundo.height && mundo.grid[x][y] == 0;
+    }
+
+    // Helper function to check if there's a wall or boundary at given coordinates
+    private boolean isWallAt(int x, int y) {
+        return x < 0 || x >= mundo.width || y < 0 || y >= mundo.height || mundo.grid[x][y] == 1;
+    }
+
+    // Helper function to get the intended source position for a given action
+    private int[] getSourcePosition(int destX, int destY, int action) {
+        int sourceX = destX, sourceY = destY;
+        switch (action) {
+            case NORTH: sourceY = destY + 1; break;
+            case SOUTH: sourceY = destY - 1; break;
+            case EAST: sourceX = destX - 1; break;
+            case WEST: sourceX = destX + 1; break;
+            case STAY: sourceX = destX; sourceY = destY; break;
+        }
+        return new int[]{sourceX, sourceY};
+    }
+    
+    // Get destination position for a given action from source
+    private int[] getDestinationPosition(int sourceX, int sourceY, int action) {
+        int destX = sourceX, destY = sourceY;
+        switch (action) {
+            case NORTH: destY = sourceY - 1; break;
+            case SOUTH: destY = sourceY + 1; break;
+            case EAST: destX = sourceX + 1; break;
+            case WEST: destX = sourceX - 1; break;
+            case STAY: destX = sourceX; destY = sourceY; break;
+        }
+        return new int[]{destX, destY};
+    }
+    
+    // Calculate total sensor likelihood for a position given sonar readings
+    private double calculateSensorLikelihood(int x, int y, String sonars) {
+        int correct = 0;
+        int incorrect = 0;
+
+        // actual walls: North, South, East, West
+        boolean[] actual = new boolean[] {
+            isWallAt(x, y-1), // North
+            isWallAt(x, y+1), // South
+            isWallAt(x+1, y), // East
+            isWallAt(x-1, y)  // West
+        };
+
+        // assume sonars string has at least 4 chars (same assumption as original code)
+        for (int i = 0; i < 4; i++) {
+            boolean sensed = (sonars.charAt(i) == '1');
+            if (actual[i] == sensed) correct++;
+            else incorrect++;
+        }
+
+        return Math.pow(sensorAccuracy, correct) * Math.pow(1.0 - sensorAccuracy, incorrect);
+    }
+    
+    // Add transition probability from source to destination
+    private void addTransitionProbability(double[][] predictionProbs, int destX, int destY, int sourceX, int sourceY, double probability) {
+        if (isValidPosition(sourceX, sourceY)) {
+            predictionProbs[destX][destY] += probability * probs[sourceX][sourceY];
+        }
+    }
+
+    // Helper function to add unintended transition probabilities
+    private void addUnintendedTransitions(double[][] predictionProbs, int x, int y, int action, double unintendedProb) {
+        // From north (y-1) - if action is not SOUTH (intended move from north)
+        if (action != SOUTH) {
+            addTransitionProbability(predictionProbs, x, y, x, y-1, unintendedProb);
+        }
+        
+        // From south (y+1) - if action is not NORTH (intended move from south)
+        if (action != NORTH) {
+            addTransitionProbability(predictionProbs, x, y, x, y+1, unintendedProb);
+        }
+        
+        // From west (x-1) - if action is not EAST (intended move from west)
+        if (action != EAST) {
+            addTransitionProbability(predictionProbs, x, y, x-1, y, unintendedProb);
+        }
+        
+        // From east (x+1) - if action is not WEST (intended move from east)
+        if (action != WEST) {
+            addTransitionProbability(predictionProbs, x, y, x+1, y, unintendedProb);
+        }
+        
+        // Staying in place (when hitting a wall or choosing STAY)
+        if (action != STAY) {
+            addTransitionProbability(predictionProbs, x, y, x, y, unintendedProb);
+        } else {
+            addTransitionProbability(predictionProbs, x, y, x, y, moveProb);
+        }
+    }
+    
+    // Helper function to handle wall collisions
+    private void handleWallCollisions(double[][] predictionProbs, int sourceX, int sourceY, int action) {
+        if (isValidPosition(sourceX, sourceY)) {
+            int[] destPos = getDestinationPosition(sourceX, sourceY, action);
+            if (isWallAt(destPos[0], destPos[1])) {
+                // Hit a wall, so stay in place with moveProb
+                addTransitionProbability(predictionProbs, sourceX, sourceY, sourceX, sourceY, moveProb);
+            }
+        }
+    }
+    
+    // Helper function to perform the correction step of the Bayes filter
+    private void sensorModel(double[][] predictionProbs, String sonars) {
+        for (int y = 0; y < mundo.height; y++) {
+            for (int x = 0; x < mundo.width; x++) {
+                if (!isValidPosition(x, y)) {
+                    probs[x][y] = 0.0;
+                    continue;
+                }
+                
+                // Calculate sensor likelihood for this position
+                double sensorLikelihood = calculateSensorLikelihood(x, y, sonars);
+                
+                // Apply unnormalized Bayes update
+                probs[x][y] = sensorLikelihood * predictionProbs[x][y];
+            }
+        }
+    }
+    
     public theRobot(String _manual, int _decisionDelay) {
         // initialize variables as specified from the command-line
         if (_manual.equals("automatic"))
@@ -401,16 +545,48 @@ public class theRobot extends JFrame {
         
         myMaps.updateProbs(probs);
     }
-    
-    // TODO (FILTERING ASSIGNMENT): update the probabilities of where the AI thinks it is based on the action selected and the new sonar readings
-    //       To do this, you should update the 2D-array "probs"
-    // Note: sonars is a bit string with four characters, specifying the sonar reading in the direction of North, South, East, and West
-    //       For example, the sonar string 1001, specifies that the sonars found a wall in the North and West directions, but not in the South and East directions
-    void updateProbabilities(int action, String sonars) {
-        // TODO (FILTERING ASSIGNMENT): add your filtering code here
 
-        myMaps.updateProbs(probs); // make sure to call this function after updating your probabilities so that the
-                                   // new probabilities will show up in the probability map on the GUI
+    
+    // Given an action taken and sonar readings received, update the probability map with a Bayes filter
+    void updateProbabilities(int action, String sonars) {
+        // transition model
+        double[][] predictionProbs = transitionModel(action);
+        
+        // sensor model
+        sensorModel(predictionProbs, sonars);
+        
+        // normalization
+        normalizeProbabilities(probs);
+
+        myMaps.updateProbs(probs);
+    }
+    
+    // Perform the transition step of the Bayes filter
+    private double[][] transitionModel(int action) {
+        double[][] predictionProbs = new double[mundo.width][mundo.height];
+        double unintendedProb = (1.0 - moveProb) / 4.0;
+        
+        // For each potential current position
+        for (int y = 0; y < mundo.height; y++) {
+            for (int x = 0; x < mundo.width; x++) {
+                if (!isValidPosition(x, y)) {
+                    predictionProbs[x][y] = 0.0;
+                    continue;
+                }
+                
+                // Add intended transition probability
+                int[] sourcePos = getSourcePosition(x, y, action);
+                addTransitionProbability(predictionProbs, x, y, sourcePos[0], sourcePos[1], moveProb);
+                
+                // Add unintended transition probabilities from adjacent positions
+                addUnintendedTransitions(predictionProbs, x, y, action, unintendedProb);
+                
+                // Handle wall collisions for intended moves
+                handleWallCollisions(predictionProbs, sourcePos[0], sourcePos[1], action);
+            }
+        }
+        
+        return predictionProbs;
     }
     
     // This is the function to implement to make the robot move using your AI;
@@ -437,9 +613,9 @@ public class theRobot extends JFrame {
                 
                 // get sonar readings after the robot moves
                 String sonars = sin.readLine();
-                //System.out.println("Sonars: " + sonars); // Uncomment if you want to see what the sonar readings are at each time step
+                System.out.println("Sonars: " + sonars);
             
-                updateProbabilities(action, sonars); // TODO (FILTERING ASSIGNMENT): this function should update the probabilities of where the AI thinks it is
+                updateProbabilities(action, sonars);
                 
                 if (sonars.length() > 4) {  // check to see if the robot has reached its goal or fallen down stairs
                     if (sonars.charAt(4) == 'w') {
@@ -454,9 +630,17 @@ public class theRobot extends JFrame {
                     }
                 }
                 else {
-                    // here, you'll want to update the position probabilities
-                    // since you know that the result of the move as that the robot
-                    // was not at the goal or in a stairwell
+                    // Update probabilities knowing the robot is NOT at a goal or stairwell
+                    for (int y = 0; y < mundo.height; y++) {
+                        for (int x = 0; x < mundo.width; x++) {
+                            if (mundo.grid[x][y] == 2 || mundo.grid[x][y] == 3) {
+                                probs[x][y] = 0.0;
+                            }
+                        }
+                    }
+                    
+                    normalizeProbabilities(probs);
+                    myMaps.updateProbs(probs);
                 }
                 Thread.sleep(decisionDelay);  // delay that is useful to see what is happening when the AI selects actions
                                               // decisionDelay is specified by the send command-line argument, which is given in milliseconds

@@ -351,53 +351,7 @@ public class theRobot extends JFrame {
         return Math.pow(sensorAccuracy, correct) * Math.pow(1.0 - sensorAccuracy, incorrect);
     }
     
-    // Add transition probability from source to destination
-    private void addTransitionProbability(double[][] predictionProbs, int destX, int destY, int sourceX, int sourceY, double probability) {
-        if (isValidPosition(sourceX, sourceY)) {
-            predictionProbs[destX][destY] += probability * probs[sourceX][sourceY];
-        }
-    }
 
-    // Helper function to add unintended transition probabilities
-    private void addUnintendedTransitions(double[][] predictionProbs, int x, int y, int action, double unintendedProb) {
-        // From north (y-1) - if action is not SOUTH (intended move from north)
-        if (action != SOUTH) {
-            addTransitionProbability(predictionProbs, x, y, x, y-1, unintendedProb);
-        }
-        
-        // From south (y+1) - if action is not NORTH (intended move from south)
-        if (action != NORTH) {
-            addTransitionProbability(predictionProbs, x, y, x, y+1, unintendedProb);
-        }
-        
-        // From west (x-1) - if action is not EAST (intended move from west)
-        if (action != EAST) {
-            addTransitionProbability(predictionProbs, x, y, x-1, y, unintendedProb);
-        }
-        
-        // From east (x+1) - if action is not WEST (intended move from east)
-        if (action != WEST) {
-            addTransitionProbability(predictionProbs, x, y, x+1, y, unintendedProb);
-        }
-        
-        // Staying in place (when hitting a wall or choosing STAY)
-        if (action != STAY) {
-            addTransitionProbability(predictionProbs, x, y, x, y, unintendedProb);
-        } else {
-            addTransitionProbability(predictionProbs, x, y, x, y, moveProb);
-        }
-    }
-    
-    // Helper function to handle wall collisions
-    private void handleWallCollisions(double[][] predictionProbs, int sourceX, int sourceY, int action) {
-        if (isValidPosition(sourceX, sourceY)) {
-            int[] destPos = getDestinationPosition(sourceX, sourceY, action);
-            if (isWallAt(destPos[0], destPos[1])) {
-                // Hit a wall, so stay in place with moveProb
-                addTransitionProbability(predictionProbs, sourceX, sourceY, sourceX, sourceY, moveProb);
-            }
-        }
-    }
     
     // Helper function to perform the correction step of the Bayes filter
     private void sensorModel(double[][] predictionProbs, String sonars) {
@@ -566,23 +520,50 @@ public class theRobot extends JFrame {
         double[][] predictionProbs = new double[mundo.width][mundo.height];
         double unintendedProb = (1.0 - moveProb) / 4.0;
         
-        // For each potential current position
-        for (int y = 0; y < mundo.height; y++) {
-            for (int x = 0; x < mundo.width; x++) {
-                if (!isValidPosition(x, y)) {
-                    predictionProbs[x][y] = 0.0;
-                    continue;
+        // For each current source position in the world
+        for (int sourceY = 0; sourceY < mundo.height; sourceY++) {
+            for (int sourceX = 0; sourceX < mundo.width; sourceX++) {
+                if (!isValidPosition(sourceX, sourceY)) {
+                    continue; // Skip invalid source positions
+                }
+                
+                // Calculate where the robot would end up with each possible action
+                // Intended action (with probability moveProb)
+                int[] intendedDest = getDestinationPosition(sourceX, sourceY, action);
+                int finalX = intendedDest[0];
+                int finalY = intendedDest[1];
+                
+                // If intended destination hits a wall, robot stays at source
+                if (isWallAt(finalX, finalY)) {
+                    finalX = sourceX;
+                    finalY = sourceY;
                 }
                 
                 // Add intended transition probability
-                int[] sourcePos = getSourcePosition(x, y, action);
-                addTransitionProbability(predictionProbs, x, y, sourcePos[0], sourcePos[1], moveProb);
+                if (isValidPosition(finalX, finalY)) {
+                    predictionProbs[finalX][finalY] += moveProb * probs[sourceX][sourceY];
+                }
                 
-                // Add unintended transition probabilities from adjacent positions
-                addUnintendedTransitions(predictionProbs, x, y, action, unintendedProb);
-                
-                // Handle wall collisions for intended moves
-                handleWallCollisions(predictionProbs, sourcePos[0], sourcePos[1], action);
+                // Unintended actions (each with probability unintendedProb)
+                int[] unintendedActions = {NORTH, SOUTH, EAST, WEST, STAY};
+                for (int unintendedAction : unintendedActions) {
+                    if (unintendedAction == action) continue; // Skip intended action
+                    
+                    int[] unintendedDest = getDestinationPosition(sourceX, sourceY, unintendedAction);
+                    int unintendedFinalX = unintendedDest[0];
+                    int unintendedFinalY = unintendedDest[1];
+                    
+                    // If unintended destination hits a wall, robot stays at source
+                    if (isWallAt(unintendedFinalX, unintendedFinalY)) {
+                        unintendedFinalX = sourceX;
+                        unintendedFinalY = sourceY;
+                    }
+                    
+                    // Add unintended transition probability
+                    if (isValidPosition(unintendedFinalX, unintendedFinalY)) {
+                        predictionProbs[unintendedFinalX][unintendedFinalY] += unintendedProb * probs[sourceX][sourceY];
+                    }
+                }
             }
         }
         

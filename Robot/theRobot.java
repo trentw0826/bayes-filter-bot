@@ -247,13 +247,21 @@ public class theRobot extends JFrame {
     public static final int WEST = 3;
     public static final int STAY = 4;
 
+    // Value iteration constants
+    public static final double REWARD_OPEN = -0.04;     // State rewards
+    public static final double REWARD_GOAL = 1.0;
+    public static final double REWARD_STAIRWELL = -1.0;
+
+    public static final double GAMMA_FACTOR = 0.99;      // Discount factor for future rewards
+    public static final double EPSILON_THRESHOLD = 0.001;   // Convergence threshold
+
     Color bkgroundColor = new Color(230,230,230);
     
     static mySmartMap myMaps; // instance of the class that draw everything to the GUI
     String mundoName;
     
     World mundo; // mundo contains all the information about the world.  See World.java
-    double moveProb, sensorAccuracy;  // stores probabilies that the robot moves in the intended direction
+    double moveProb, sensorAccuracy;  // stores probabilities that the robot moves in the intended direction
                                       // and the probability that a sonar reading is correct, respectively
     
     // variables to communicate with the Server via sockets
@@ -267,10 +275,10 @@ public class theRobot extends JFrame {
     int startX = -1, startY = -1;
     int decisionDelay = 250;
     
-    // store your probability map (for position of the robot in this array
+    // Stores probability map of robot location
     double[][] probs;
-    
-    // store your computed value of being in each state (x, y)
+
+    // Stores computed value of being in each state (x, y)
     double[][] Vs;
     
     // Helper function to normalize a probability array
@@ -569,6 +577,137 @@ public class theRobot extends JFrame {
         
         return predictionProbs;
     }
+
+    // Perform value iteration to compute the value of each state
+    void valueIteration() {
+        // Populates the 'Vs' array with computed values for each state using the constants defined in the robot class
+        
+        // Initialize Vs array
+        Vs = new double[mundo.width][mundo.height];
+        
+        // Initialize all values to 0
+        for (int y = 0; y < mundo.height; y++) {
+            for (int x = 0; x < mundo.width; x++) {
+                Vs[x][y] = 0.0;
+            }
+        }
+        
+        double maxDelta;
+        int iterations = 0;
+        
+        // Iterate until convergence
+        do {
+            maxDelta = 0.0;
+            double[][] newVs = new double[mundo.width][mundo.height];
+            
+            // For each state in the grid
+            for (int y = 0; y < mundo.height; y++) {
+                for (int x = 0; x < mundo.width; x++) {
+                    // Skip walls
+                    if (mundo.grid[x][y] == 1) {
+                        newVs[x][y] = 0.0;
+                        continue;
+                    }
+                    
+                    // Get the reward for this state
+                    double reward;
+                    if (mundo.grid[x][y] == 0) {
+                        reward = REWARD_OPEN;  // Open space
+                    } else if (mundo.grid[x][y] == 3) {
+                        reward = REWARD_GOAL;  // Goal
+                    } else if (mundo.grid[x][y] == 2) {
+                        reward = REWARD_STAIRWELL;  // Stairwell
+                    } else {
+                        throw new IllegalStateException("Unexpected grid value");
+                    }
+                    
+                    // Terminal states have fixed values equal to their rewards
+                    if (mundo.grid[x][y] == 2 || mundo.grid[x][y] == 3) {
+                        newVs[x][y] = reward;
+                        continue;
+                    }
+                    
+                    // For non-terminal states, compute the value using Bellman equation
+                    // Find the maximum expected value over all possible actions
+                    double maxActionValue = Double.NEGATIVE_INFINITY;
+                    
+                    int[] actions = {NORTH, SOUTH, EAST, WEST, STAY};
+                    for (int action : actions) {
+                        double expectedValue = 0.0;
+                        
+                        // Calculate expected value for this action
+                        // considering the transition probabilities
+                        double unintendedProb = (1.0 - moveProb) / 4.0;
+                        
+                        // For each possible actual action (intended + unintended)
+                        int[] possibleActions = {NORTH, SOUTH, EAST, WEST, STAY};
+                        for (int actualAction : possibleActions) {
+                            // Determine probability of this actual action occurring
+                            double actionProb;
+                            if (actualAction == action) {
+                                actionProb = moveProb;  // Intended action
+                            } else {
+                                actionProb = unintendedProb;  // Unintended action
+                            }
+                            
+                            // Get destination for this actual action
+                            int[] dest = getDestinationPosition(x, y, actualAction);
+                            int destX = dest[0];
+                            int destY = dest[1];
+                            
+                            // If destination is a wall or out of bounds, stay in current position
+                            if (isWallAt(destX, destY)) {
+                                destX = x;
+                                destY = y;
+                            }
+                            
+                            // Add to expected value: probability * value of destination state
+                            expectedValue += actionProb * Vs[destX][destY];
+                        }
+                        
+                        // Keep track of the maximum expected value across all actions
+                        if (expectedValue > maxActionValue) {
+                            maxActionValue = expectedValue;
+                        }
+                    }
+                    
+                    // Bellman update: V(s) = R(s) + gamma * max_a sum_s' P(s'|s,a) * V(s')
+                    newVs[x][y] = reward + GAMMA_FACTOR * maxActionValue;
+                    
+                    // Track maximum change for convergence check
+                    double delta = Math.abs(newVs[x][y] - Vs[x][y]);
+                    if (delta > maxDelta) {
+                        maxDelta = delta;
+                    }
+                }
+            }
+            
+            // Update Vs with new values
+            Vs = newVs;
+            iterations++;
+            
+        } while (maxDelta > EPSILON_THRESHOLD);
+        
+        System.out.println("Value iteration converged after " + iterations + " iterations");
+        
+        // Print some sample values for verification
+        System.out.println("Sample state values:");
+        double maxV = Double.NEGATIVE_INFINITY;
+        double minV = Double.POSITIVE_INFINITY;
+        for (int y = 0; y < Math.min(5, mundo.height); y++) {
+            for (int x = 0; x < Math.min(5, mundo.width); x++) {
+                if (mundo.grid[x][y] != 1) {  // Skip walls
+                    System.out.printf("  V[%d,%d] = %.4f (type=%d)\n", x, y, Vs[x][y], mundo.grid[x][y]);
+                    maxV = Math.max(maxV, Vs[x][y]);
+                    minV = Math.min(minV, Vs[x][y]);
+                }
+            }
+        }
+        System.out.printf("Value range: [%.4f, %.4f]\n", minV, maxV);
+        
+        // Update the GUI with computed values
+        myMaps.updateValues(Vs);
+    }
     
     // This is the function to implement to make the robot move using your AI;
     // (FILTERING ASSIGNMENT): You do NOT need to write this function yet; it can remain as is
@@ -578,9 +717,10 @@ public class theRobot extends JFrame {
     }
     
     void doStuff() {
+        System.out.println("Starting to do stuff");
         int action;
         
-        //valueIteration();  // TODO (MDP ASSIGNMENT): uncomment, implement function, and use to compute your value function
+        valueIteration();  // Performs value iteration to compute the values of each state
         initializeProbabilities();  // Initializes the location (probability) map
         
         while (true) {

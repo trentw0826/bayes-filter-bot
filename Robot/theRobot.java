@@ -253,7 +253,10 @@ public class theRobot extends JFrame {
     public static final double REWARD_STAIRWELL = -10.0;
 
     public static final double GAMMA_FACTOR = 0.99;      // Discount factor for future rewards
-    public static final double EPSILON_THRESHOLD = 0.001;   // Convergence threshold
+    public static final double CONVERGENCE_EPSILON = 0.001;   // Convergence threshold
+
+    // Random exploration constant
+    public static final double EXPLORATION_EPSILON = 0.2; // Chance to explore
 
     Color bkgroundColor = new Color(230,230,230);
     
@@ -686,7 +689,7 @@ public class theRobot extends JFrame {
             Vs = newVs;
             iterations++;
             
-        } while (maxDelta > EPSILON_THRESHOLD);
+        } while (maxDelta > CONVERGENCE_EPSILON);
         
         System.out.println("Value iteration converged after " + iterations + " iterations");
         
@@ -712,7 +715,25 @@ public class theRobot extends JFrame {
     }
     
     // Automatically selects an action for the using the maximum expected utility principle
-    int automaticAction() {
+    int automaticAction(boolean useBestUtility) {
+        // Maximum expected utility action selection
+        if (useBestUtility) {
+            return getBestUtilityAction();
+        }
+
+        // Epsilon-greedy action selection
+        if (Math.random() < EXPLORATION_EPSILON) {
+            // Explore: choose random action
+            int[] actions = {NORTH, SOUTH, EAST, WEST};
+            System.out.println("Random action exploration");
+            return actions[(int)(Math.random() * actions.length)];
+        } else {
+            // Exploit: choose best known action
+            return getBestUtilityAction();
+        }
+    }
+
+    int getBestUtilityAction() {
         double maxUtility = Double.NEGATIVE_INFINITY;
         int bestAction = STAY;
 
@@ -783,7 +804,7 @@ public class theRobot extends JFrame {
                 if (isManual)
                     action = getHumanAction();  // get the action selected by the user
                 else
-                    action = automaticAction(); // get the action selected by your AI
+                    action = automaticAction(false); // get the action selected by your AI
                 
                 sout.println(action); // send the action to the Server
                 

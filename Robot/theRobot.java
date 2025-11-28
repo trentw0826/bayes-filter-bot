@@ -250,7 +250,7 @@ public class theRobot extends JFrame {
     // Value iteration constants
     public static final double REWARD_OPEN = -0.04;     // State rewards
     public static final double REWARD_GOAL = 1.0;
-    public static final double REWARD_STAIRWELL = -1.0;
+    public static final double REWARD_STAIRWELL = -10.0;
 
     public static final double GAMMA_FACTOR = 0.99;      // Discount factor for future rewards
     public static final double EPSILON_THRESHOLD = 0.001;   // Convergence threshold
@@ -690,21 +690,22 @@ public class theRobot extends JFrame {
         
         System.out.println("Value iteration converged after " + iterations + " iterations");
         
-        // Print all values in a grid
-        // System.out.println("State values (rows = y, cols = x):");
-        // double maxV = Double.NEGATIVE_INFINITY;
-        // double minV = Double.POSITIVE_INFINITY;
-        // for (int y = 0; y < mundo.height; y++) {
-        //     StringBuilder sb = new StringBuilder();
-        //     for (int x = 0; x < mundo.width; x++) {
-        //         double v = Vs[x][y];
-        //         sb.append(String.format("%.2f", v));
-        //         if (x < mundo.width - 1) sb.append(' ');
-        //         if (v > maxV) maxV = v;
-        //         if (v < minV) minV = v;
-        //     }
-        //     System.out.println(sb.toString());
-        // }
+        // Print all values in a grid with even spacing
+        System.out.println("State values (rows = y, cols = x):");
+        double maxV = Double.NEGATIVE_INFINITY;
+        double minV = Double.POSITIVE_INFINITY;
+        for (int y = 0; y < mundo.height; y++) {
+            StringBuilder sb = new StringBuilder();
+            for (int x = 0; x < mundo.width; x++) {
+                double v = Vs[x][y];
+                sb.append(String.format("%8.2f", v)); // fixed-width field for even spacing
+                if (x < mundo.width - 1) sb.append(' ');
+                if (v > maxV) maxV = v;
+                if (v < minV) minV = v;
+            }
+            System.out.println(sb.toString());
+        }
+        System.out.println(String.format("min=%.2f max=%.2f", minV, maxV));
         
         // Update the GUI with computed values
         myMaps.updateValues(Vs);

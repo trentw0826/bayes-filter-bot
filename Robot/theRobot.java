@@ -255,8 +255,16 @@ public class theRobot extends JFrame {
     public static final double GAMMA_FACTOR = 0.99;      // Discount factor for future rewards
     public static final double CONVERGENCE_EPSILON = 0.001;   // Convergence threshold
 
-    // Random exploration constant
-    public static final double EXPLORATION_EPSILON = 0.2; // Chance to explore
+    // Random exploration constants
+    public static final double BASE_EXPLORATION_EPSILON = 0.1; // Base chance to explore
+    public static final double MAX_EXPLORATION_EPSILON = 0.6; // Max chance to explore when stuck
+    public static final double STUCK_INCREMENT = 0.1; // Exploration increase per consecutive STAY
+    public static final double CONFIDENCE_THRESHOLD = 0.5; // Threshold for high confidence in position
+    public static final double CONFIDENCE_REDUCTION_MAX = 0.7; // Reduction in exploration due to confidence
+
+    // Tracking variables for adaptive exploration
+    private int consecutiveStayCount = 0;
+    private int lastAction = -1;
 
     Color bkgroundColor = new Color(230,230,230);
     
@@ -721,16 +729,68 @@ public class theRobot extends JFrame {
             return getBestUtilityAction();
         }
 
-        // Epsilon-greedy action selection
-        if (Math.random() < EXPLORATION_EPSILON) {
-            // Explore: choose random action
+        // Compute adaptive exploration rate
+        double explorationRate = computeAdaptiveExplorationRate();
+        
+        System.out.println(String.format("Exploration rate: %.2f (consecutive STAYs: %d, max confidence: %.3f)",
+            explorationRate, consecutiveStayCount, getMaxConfidence()));
+
+        // Adaptive epsilon-greedy action selection
+        if (Math.random() < explorationRate) {
+            // Explore: choose random action (never STAY during exploration)
             int[] actions = {NORTH, SOUTH, EAST, WEST};
-            System.out.println("Random action exploration");
-            return actions[(int)(Math.random() * actions.length)];
+            int action = actions[(int)(Math.random() * actions.length)];
+            System.out.println("Exploring with action: " + action);
+            trackAction(action);
+            return action;
         } else {
             // Exploit: choose best known action
-            return getBestUtilityAction();
+            int action = getBestUtilityAction();
+            trackAction(action);
+            return action;
         }
+    }
+
+    // Compute adaptive exploration rate
+    private double computeAdaptiveExplorationRate() {
+        // Start with base exploration rate
+        double explorationRate = BASE_EXPLORATION_EPSILON;
+        
+        // Increase exploration when 'stuck' (consecutive STAY actions)
+        double stuckBonus = consecutiveStayCount * STUCK_INCREMENT;
+        explorationRate += stuckBonus;
+        
+        // Cap exploration rate at maximum
+        explorationRate = Math.min(explorationRate, MAX_EXPLORATION_EPSILON);
+        
+        return explorationRate;
+    }
+    
+    // Get the maximum probability (confidence) in current belief state
+    private double getMaxConfidence() {
+        double maxProb = 0.0;
+        for (int y = 0; y < mundo.height; y++) {
+            for (int x = 0; x < mundo.width; x++) {
+                if (probs[x][y] > maxProb) {
+                    maxProb = probs[x][y];
+                }
+            }
+        }
+        return maxProb;
+    }
+    
+    // Track actions to detect when robot is stuck
+    private void trackAction(int action) {
+        if (action == STAY) {
+            if (lastAction == STAY) {
+                consecutiveStayCount++;
+            } else {
+                consecutiveStayCount = 1;
+            }
+        } else {
+            consecutiveStayCount = 0;
+        }
+        lastAction = action;
     }
 
     int getBestUtilityAction() {
@@ -804,7 +864,7 @@ public class theRobot extends JFrame {
                 if (isManual)
                     action = getHumanAction();  // get the action selected by the user
                 else
-                    action = automaticAction(false); // get the action selected by your AI
+                    action = automaticAction(true); // get the action selected by your AI
                 
                 sout.println(action); // send the action to the Server
                 

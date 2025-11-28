@@ -256,9 +256,9 @@ public class theRobot extends JFrame {
     public static final double CONVERGENCE_EPSILON = 0.001;   // Convergence threshold
 
     // Random exploration constants
-    public static final double BASE_EXPLORATION_EPSILON = 0.1; // Base chance to explore
+    public static final double BASE_EXPLORATION_EPSILON = 0.05; // Base chance to explore
     public static final double MAX_EXPLORATION_EPSILON = 0.6; // Max chance to explore when stuck
-    public static final double STUCK_INCREMENT = 0.1; // Exploration increase per consecutive STAY
+    public static final double STUCK_INCREMENT = 0.3; // Exploration increase per consecutive STAY
     public static final double CONFIDENCE_THRESHOLD = 0.5; // Threshold for high confidence in position
     public static final double CONFIDENCE_REDUCTION_MAX = 0.7; // Reduction in exploration due to confidence
 
@@ -864,7 +864,7 @@ public class theRobot extends JFrame {
                 if (isManual)
                     action = getHumanAction();  // get the action selected by the user
                 else
-                    action = automaticAction(true); // get the action selected by your AI
+                    action = automaticAction(false); // get the action selected by your AI
                 
                 sout.println(action); // send the action to the Server
                 

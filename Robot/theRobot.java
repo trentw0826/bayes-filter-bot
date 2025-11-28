@@ -249,8 +249,8 @@ public class theRobot extends JFrame {
 
     // Value iteration constants
     public static final double REWARD_OPEN = -0.04;     // State rewards
-    public static final double REWARD_GOAL = 1.0;
-    public static final double REWARD_STAIRWELL = -10.0;
+    public static final double REWARD_GOAL = 10.0;
+    public static final double REWARD_STAIRWELL = -5.0;
 
     public static final double GAMMA_FACTOR = 0.99;      // Discount factor for future rewards
     public static final double CONVERGENCE_EPSILON = 0.001;   // Convergence threshold

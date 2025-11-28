@@ -690,32 +690,86 @@ public class theRobot extends JFrame {
         
         System.out.println("Value iteration converged after " + iterations + " iterations");
         
-        // Print some sample values for verification
-        System.out.println("Sample state values:");
-        double maxV = Double.NEGATIVE_INFINITY;
-        double minV = Double.POSITIVE_INFINITY;
-        for (int y = 0; y < Math.min(5, mundo.height); y++) {
-            for (int x = 0; x < Math.min(5, mundo.width); x++) {
-                if (mundo.grid[x][y] != 1) {  // Skip walls
-                    System.out.printf("  V[%d,%d] = %.4f (type=%d)\n", x, y, Vs[x][y], mundo.grid[x][y]);
-                    maxV = Math.max(maxV, Vs[x][y]);
-                    minV = Math.min(minV, Vs[x][y]);
-                }
-            }
-        }
-        System.out.printf("Value range: [%.4f, %.4f]\n", minV, maxV);
+        // Print all values in a grid
+        // System.out.println("State values (rows = y, cols = x):");
+        // double maxV = Double.NEGATIVE_INFINITY;
+        // double minV = Double.POSITIVE_INFINITY;
+        // for (int y = 0; y < mundo.height; y++) {
+        //     StringBuilder sb = new StringBuilder();
+        //     for (int x = 0; x < mundo.width; x++) {
+        //         double v = Vs[x][y];
+        //         sb.append(String.format("%.2f", v));
+        //         if (x < mundo.width - 1) sb.append(' ');
+        //         if (v > maxV) maxV = v;
+        //         if (v < minV) minV = v;
+        //     }
+        //     System.out.println(sb.toString());
+        // }
         
         // Update the GUI with computed values
         myMaps.updateValues(Vs);
     }
     
-    // This is the function to implement to make the robot move using your AI;
-    // (FILTERING ASSIGNMENT): You do NOT need to write this function yet; it can remain as is
+    // Automatically selects an action for the using the maximum expected utility principle
     int automaticAction() {
-        // TODO (MDP ASSIGNMENT): automatically determine the action the robot should take
-        return STAY;  // default action for now
+        double maxUtility = Double.NEGATIVE_INFINITY;
+        int bestAction = STAY;
+
+        for (int action : new int[]{NORTH, SOUTH, EAST, WEST, STAY}) {
+            double utility = computeExpectedUtility(action);
+            if (utility > maxUtility) {
+                maxUtility = utility;
+                bestAction = action;
+            }
+        }
+
+        System.out.println("Automatic Action: " + bestAction);
+        return bestAction;
     }
-    
+
+    // Compute expected utility of taking a given action
+    double computeExpectedUtility(int action) {
+        double expectedUtility = 0.0;
+        double unintendedProb = (1.0 - moveProb) / 4.0;
+        
+        // Sum over all possible current positions weighted by probability
+        for (int y = 0; y < mundo.height; y++) {
+            for (int x = 0; x < mundo.width; x++) {
+                if (probs[x][y] <= 0.0 || !isValidPosition(x, y)) {
+                    continue; // Only consider valid, possible positions
+                }
+                
+                // Compute expected value over all possible outcomes for the position
+                double positionExpectedValue = 0.0;
+                
+                int[] possibleOutcomes = {NORTH, SOUTH, EAST, WEST, STAY};
+                for (int outcome : possibleOutcomes) {
+                    // Determine probability of this outcome
+                    double outcomeProb = (outcome == action) ? moveProb : unintendedProb;
+                    
+                    // Get destination for this outcome
+                    int[] dest = getDestinationPosition(x, y, outcome);
+                    int destX = dest[0];
+                    int destY = dest[1];
+                    
+                    // If destination hits a wall, robot stays at current position
+                    if (isWallAt(destX, destY)) {
+                        destX = x;
+                        destY = y;
+                    }
+                    
+                    // Weight outcome value by outcome probability
+                    positionExpectedValue += outcomeProb * Vs[destX][destY];
+                }
+
+                // Weight this position's expected value by belief probability
+                expectedUtility += probs[x][y] * positionExpectedValue;
+            }
+        }
+
+        return expectedUtility;
+    }
+
     void doStuff() {
         System.out.println("Starting to do stuff");
         int action;
@@ -726,9 +780,9 @@ public class theRobot extends JFrame {
         while (true) {
             try {
                 if (isManual)
-                    action = getHumanAction();  // get the action selected by the user (from the keyboard)
+                    action = getHumanAction();  // get the action selected by the user
                 else
-                    action = automaticAction(); // TODO (MDP ASSIGNMENT): get the action selected by your AI;
+                    action = automaticAction(); // get the action selected by your AI
                 
                 sout.println(action); // send the action to the Server
                 
